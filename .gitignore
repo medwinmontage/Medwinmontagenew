@@ -1,0 +1,23 @@
+# dependencies and build output
+node_modules
+.next
+out
+*.tsbuildinfo
+next-env.d.ts
+
+# secrets — never commit these
+.env
+.env.*
+!.env.example
+
+# uploads made on a local machine (production uses Supabase Storage)
+/public/uploads/*
+!/public/uploads/.gitkeep
+/.private-uploads
+
+# misc
+*.log
+.DS_Store
+.vercel
+.vscode/*
+!.vscode/extensions.json
