@@ -1,0 +1,400 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Auth ----------
+
+model AdminUser {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  passwordHash String
+  role         String   @default("SUPER_ADMIN") // SUPER_ADMIN | EDITOR | MARKETING | SUPPORT
+  createdAt    DateTime @default(now())
+}
+
+model Customer {
+  id           String    @id @default(cuid())
+  name         String
+  email        String    @unique
+  phone        String    @unique
+  passwordHash String
+  company      String?
+  city         String?
+  state        String?
+  status       String    @default("Active") // Active | Suspended
+  lastLogin    DateTime?
+  createdAt    DateTime  @default(now())
+  bookings     Booking[]
+  leads        Lead[]
+  quoteRequests QuoteRequest[]
+  feedback     Feedback[]
+}
+
+// ---------- Site content (CMS) ----------
+
+model Service {
+  id      String   @id @default(cuid())
+  icon    String   // key into the frontend icon set: film | camera | ai | pen | share | chart | code | badge
+  title   String
+  desc    String
+  items   String[]
+  enabled Boolean  @default(true)
+  order   Int      @default(0)
+}
+
+model PortfolioItem {
+  id           String   @id @default(cuid())
+  category     String
+  tag          String
+  title        String
+  client       String?
+  completedAt  String?
+  videoUrl     String?
+  thumbnailUrl String?
+  enabled      Boolean  @default(true)
+  order        Int      @default(0)
+}
+
+model Package {
+  id       String   @id @default(cuid())
+  name     String
+  desc     String
+  features String[]
+  popular  Boolean  @default(false)
+  enabled  Boolean  @default(true)
+  order    Int      @default(0)
+}
+
+model Testimonial {
+  id      String  @id @default(cuid())
+  quote   String
+  name    String
+  role    String
+  enabled Boolean @default(true)
+  order   Int     @default(0)
+}
+
+model Faq {
+  id       String  @id @default(cuid())
+  question String
+  answer   String
+  enabled  Boolean @default(true)
+  order    Int     @default(0)
+}
+
+model EventType {
+  id      String  @id @default(cuid())
+  name    String
+  enabled Boolean @default(true)
+  order   Int     @default(0)
+}
+
+model Offer {
+  id      String   @id @default(cuid())
+  enabled Boolean  @default(true)
+  text    String
+  url     String   @default("") // admin-configured destination for Claim Offer + the offer bar itself
+  endAt   DateTime
+}
+
+// General-purpose banners (previously "Offer Banners"). A banner is shown when
+// it is enabled AND now is inside [startAt, endAt] (either bound may be empty).
+// All dates are stored in UTC; the admin UI converts to/from the browser's local time.
+model Banner {
+  id           String    @id @default(cuid())
+  name         String    @default("")
+  enabled      Boolean   @default(true)
+  imageUrl     String    // public URL (Supabase Storage in production, /uploads locally)
+  mobileImageUrl String  @default("") // optional artwork used on phones (up to 639px wide); falls back to imageUrl
+  altText      String    @default("")
+  linkType     String    @default("none") // none | internal | external
+  linkUrl      String    @default("")
+  startAt      DateTime?
+  endAt        DateTime?
+  timerEnabled Boolean   @default(false) // show a countdown to endAt
+  order        Int       @default(0)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @default(now()) @updatedAt
+}
+
+// Singleton row (id is always "singleton") holding hero, contact, social and policy content
+model SiteContent {
+  id              String  @id @default("singleton")
+  heroEyebrow     String
+  heroHeadline    String
+  heroSub         String
+  heroStats       Json // [{ value, label }]
+
+  whoHeadline     String  @default("Meet Medwin Levay E — Founder, Medwin Montage.")
+  whoText         String  @default("")
+
+  contactAddress  String
+  contactPhone    String
+  contactEmail    String
+  contactHours    String
+
+  socialInstagram String  @default("")
+  socialFacebook  String  @default("")
+  socialYoutube   String  @default("")
+  socialLinkedin  String  @default("")
+  socialTwitter   String  @default("")
+
+  privacyMode     String  @default("text") // text | url
+  privacyText     String  @default("")
+  privacyUrl      String  @default("")
+  termsMode       String  @default("text")
+  termsText       String  @default("")
+  termsUrl        String  @default("")
+  refundMode      String  @default("text")
+  refundText      String  @default("")
+  refundUrl       String  @default("")
+
+  whatsappNumber  String  @default("") // public WhatsApp number (digits with country code)
+  logoUrl         String  @default("") // optional uploaded logo; falls back to the built-in mark
+
+  bookOfferEnabled Boolean @default(true) // hide/unhide the "Book Offer" button
+  themeMode        String  @default("light") // default theme for new visitors
+
+  updatedAt       DateTime @updatedAt
+}
+
+// ---------- Transactional data ----------
+
+model Booking {
+  id         String    @id @default(cuid())
+  ref        String    @unique
+  status     String    @default("Incomplete") // Incomplete | Processing | Completed | Cancelled | Rejected (legacy: Pending, Confirmed — see lib/status.ts)
+  previousStatus  String?
+  statusUpdatedAt DateTime?
+  bookingType String   @default("Event Booking") // fixed: "Event Booking" (this model is event-only; Service/Offer live in Lead)
+  eventType  String
+  eventDate  String
+  eventTime  String?
+  location   String
+  budget     String?
+  notes      String?
+  adminNotes String?
+  name       String
+  phone      String
+  email      String
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id])
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @default(now()) @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([customerId])
+}
+
+model Lead {
+  id          String    @id @default(cuid())
+  ref         String    @unique
+  mode        String    @default("service") // "service" (Book Our Services) | "offer" (Book Offer waitlist)
+  status      String    @default("Incomplete") // same values as Booking.status
+  previousStatus  String?
+  statusUpdatedAt DateTime?
+  adminNotes  String?
+  categories  String[]
+  itemsJson   Json
+  detailsJson Json
+  name        String
+  email       String
+  phone       String
+  location    String
+  company     String?
+  gst         String?
+  customerId  String?
+  customer    Customer? @relation(fields: [customerId], references: [id])
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @default(now()) @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([customerId])
+}
+
+model QuoteRequest {
+  id        String   @id @default(cuid())
+  ref       String   @unique
+  name      String
+  company   String?
+  email     String
+  phone     String
+  whatsapp  String
+  status    String   @default("Requested") // Requested | Quoted | Closed
+  adminNotes String?
+  customerId String?
+  customer  Customer? @relation(fields: [customerId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@index([customerId])
+}
+
+// Customer feedback / reviews. Always tied to the logged-in customer (the id
+// comes from the session, never from the request body). Only Approved rows
+// with allowPublic = true are shown on the public site.
+model Feedback {
+  id          String   @id @default(cuid())
+  customerId  String
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  rating      Int      // 1–5
+  text        String
+  relatedType String?  // "booking" | "lead"
+  relatedRef  String?  // e.g. MMBE-001 — must belong to the same customer
+  allowPublic Boolean  @default(true)
+  status      String   @default("Pending") // Pending | Approved | Rejected
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+
+  @@index([customerId])
+  @@index([status])
+}
+
+// "Join as Crew" applications from the public form.
+model CrewApplication {
+  id                   String   @id @default(cuid())
+  ref                  String   @unique // MMCR-001
+  fullName             String
+  phone                String
+  age                  Int
+  role                 String
+  experienceType       String   // Fresher | Experienced
+  experienceYears      Float?
+  workedInOrganization Boolean  @default(false)
+  organizationName     String?
+  educationStatus      String   // Studying | Studied | Neither
+  studiedWhat          String?
+  studyingWhatWhere    String?
+  resumePath           String?  // key in the PRIVATE storage bucket — never a public URL
+  resumeName           String?
+  previousWorkUrl      String?
+  status               String   @default("New") // New | Reviewing | Shortlisted | Rejected | Hired
+  adminNotes           String?
+  // The crew account that sent this application. Always taken from the login
+  // session, never from the form. Unique, so one account sends one application.
+  // Null on applications that were sent before crew accounts existed.
+  crewAccountId        String?      @unique
+  crewAccount          CrewAccount? @relation(fields: [crewAccountId], references: [id], onDelete: SetNull)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @default(now()) @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+// Crew log in / register to send an application and to receive notifications.
+// A separate table from Customer on purpose: a crew member is not a customer,
+// and the two sessions use different cookies and different signing secrets.
+model CrewAccount {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  phone        String   @unique
+  passwordHash String
+  lastLogin    DateTime?
+  createdAt    DateTime @default(now())
+  applications CrewApplication[]
+}
+
+// In-app notifications for the three audiences. The text lives here and is only
+// ever read through session-checked routes (/api/notifications); the realtime
+// channel carries a content-free "something changed" ping, never this text.
+//   recipientKind: admin | customer | crew
+//   recipientId:   "admin" (the shared admin inbox) | Customer.id | CrewAccount.id
+// actor* records who sent it when a customer or crew member wrote to the admin,
+// so the admin can reply to the right person.
+model Notification {
+  id            String    @id @default(cuid())
+  recipientKind String
+  recipientId   String
+  title         String
+  body          String    @default("")
+  link          String    @default("")
+  actorKind     String?
+  actorId       String?
+  actorName     String?
+  readAt        DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@index([recipientKind, recipientId, createdAt])
+  @@index([recipientKind, recipientId, readAt])
+}
+
+// Videos shown in the "Showreel" section. They autoplay muted and looped (the only
+// kind of autoplay browsers allow) and pause when scrolled out of view.
+//   source: upload  -> a file stored by this site (Supabase Storage / local disk)
+//           youtube -> a YouTube link          vimeo -> a Vimeo link
+//           url     -> a direct https link to an .mp4 / .webm file
+model Video {
+  id        String   @id @default(cuid())
+  title     String
+  caption   String   @default("")
+  source    String   @default("upload")
+  url       String
+  posterUrl String   @default("")
+  enabled   Boolean  @default(true)
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+}
+
+// Singleton row (id = "singleton") edited from Admin → SEO Settings.
+model SeoSettings {
+  id                  String   @id @default("singleton")
+  siteTitle           String   @default("Medwin Montage")
+  seoTitle            String   @default("")
+  titleTemplate       String   @default("%s | Medwin Montage")
+  metaDescription     String   @default("")
+  primaryKeywords     String[] @default([])
+  secondaryKeywords   String[] @default([])
+  businessName        String   @default("Medwin Montage")
+  businessDescription String   @default("")
+  canonicalUrl        String   @default("")
+  ogTitle             String   @default("")
+  ogDescription       String   @default("")
+  ogImage             String   @default("")
+  twitterTitle        String   @default("")
+  twitterDescription  String   @default("")
+  twitterImage        String   @default("")
+
+  primaryLocation     String   @default("")
+  city                String   @default("")
+  district            String   @default("")
+  state               String   @default("")
+  country             String   @default("India")
+  serviceAreas        String[] @default([])
+  nearbyLocations     String[] @default([])
+
+  mainServices        String[] @default([])
+  serviceKeywords     String[] @default([])
+  localDescription    String   @default("")
+
+  robotsIndex         Boolean  @default(true)
+  robotsFollow        Boolean  @default(true)
+  sitemapEnabled      Boolean  @default(true)
+  structuredData      Boolean  @default(true)
+
+  updatedAt           DateTime @default(now()) @updatedAt
+}
+
+// Backs sequential, human-readable reference numbers (MMBE-001, MMBS-001, ...).
+// A dedicated row per counter + an atomic increment (see lib/refCounter.ts)
+// avoids the race condition a naive "count existing rows + 1" approach has
+// under concurrent bookings.
+model Counter {
+  name  String @id // "event" | "service" | "quote" | "crew"
+  value Int    @default(0)
+}
+
+model NewsletterSubscriber {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  createdAt DateTime @default(now())
+}
