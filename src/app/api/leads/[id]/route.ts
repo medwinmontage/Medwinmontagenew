@@ -1,0 +1,55 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { requireAdmin } from '@/lib/session';
+import { workStatusUpdateSchema, firstError } from '@/lib/validators';
+import { normalizeStatus, STATUS_HELP } from '@/lib/status';
+import { notify, TOPIC_ADMIN, customerTopic } from '@/lib/realtime';
+import { createNotification } from '@/lib/notifications';
+
+type Ctx = { params: Promise<{ id: string }> };
+
+// Admin only: change the status and/or the note shown to the customer.
+// Only those two fields are accepted — the rest of the record cannot be rewritten from here.
+export async function PATCH(req: NextRequest, ctx: Ctx) {
+  const params = await ctx.params;
+  const admin = await requireAdmin();
+  if (!admin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const parsed = workStatusUpdateSchema.safeParse(await req.json().catch(() => null));
+  if (!parsed.success) return NextResponse.json({ error: firstError(parsed.error) }, { status: 400 });
+
+  const existing = await prisma.lead.findUnique({ where: { id: params.id } });
+  if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+
+  const { status, adminNotes } = parsed.data;
+  const changed = status !== undefined && status !== normalizeStatus(existing.status);
+  const row = await prisma.lead.update({
+    where: { id: params.id },
+    data: {
+      ...(adminNotes !== undefined ? { adminNotes } : {}),
+      ...(changed ? { status, previousStatus: normalizeStatus(existing.status), statusUpdatedAt: new Date() } : {}),
+    },
+  });
+  await notify(TOPIC_ADMIN, row.customerId && customerTopic(row.customerId));
+  // In-app notification for the customer (no email/SMS provider is configured, so
+  // this is how they hear about a change besides opening their portal).
+  const noteChanged = adminNotes !== undefined && (adminNotes || '') !== (existing.adminNotes || '') && !!adminNotes;
+  if (row.customerId && (changed || noteChanged)) {
+    await createNotification({
+      to: 'customer', toId: row.customerId, link: '/account',
+      title: changed ? `Your request ${row.ref} is now ${normalizeStatus(row.status)}` : `New note on your request ${row.ref}`,
+      body: noteChanged ? `Note from Medwin Montage: ${adminNotes}` : STATUS_HELP[normalizeStatus(row.status)],
+    });
+  }
+  return NextResponse.json({ ok: true, status: normalizeStatus(row.status), previousStatus: row.previousStatus });
+}
+
+export async function DELETE(_req: NextRequest, ctx: Ctx) {
+  const params = await ctx.params;
+  const admin = await requireAdmin();
+  if (!admin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const existing = await prisma.lead.findUnique({ where: { id: params.id } });
+  if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  await prisma.lead.delete({ where: { id: params.id } });
+  await notify(TOPIC_ADMIN, existing.customerId && customerTopic(existing.customerId));
+  return NextResponse.json({ ok: true });
+}
