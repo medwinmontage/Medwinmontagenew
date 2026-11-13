@@ -1,0 +1,12 @@
+[1mdiff --git a/package-lock.json b/package-lock.json[m
+[1mindex 804eae9..55e741a 100644[m
+[1m--- a/package-lock.json[m
+[1m+++ b/package-lock.json[m
+[36m@@ -1753,7 +1753,6 @@[m
+       "version": "2.3.3",[m
+       "resolved": "https://registry.npmjs.org/fsevents/-/fsevents-2.3.3.tgz",[m
+       "integrity": "sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw==",[m
+[31m-      "dev": true,[m
+       "hasInstallScript": true,[m
+       "license": "MIT",[m
+       "optional": true,[m
